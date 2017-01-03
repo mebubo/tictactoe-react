@@ -1,24 +1,35 @@
 const React = require('react');
 const ReactDOM = require('react-dom');
-const { createStore, applyMiddleware } = require('redux');
+const { createStore, applyMiddleware, combineReducers } = require('redux');
 const { Provider, connect } = require('react-redux');
 const ReduxThunk = require('redux-thunk').default;
+const createLogger = require('redux-logger');
 
 const firebase = require('./firebase.js');
-const { writeUserState, login, isAuth, initAuth } = require('./firebase.js')
+const { writeUserState, loginWith, initAuth, firebaseAuth } = require('./firebase.js')
 const { tictactoe } = require('./reducer-tictactoe.js');
+const { auth, login, logout } = require('./auth.js')
 
-const store = createStore(tictactoe, window.__REDUX_DEVTOOLS_EXTENSION__ && window.__REDUX_DEVTOOLS_EXTENSION__(), applyMiddleware(ReduxThunk));
+const store = createStore(
+  combineReducers({tictactoe, auth}),
+  window.__REDUX_DEVTOOLS_EXTENSION__ && window.__REDUX_DEVTOOLS_EXTENSION__(),
+  applyMiddleware(
+    ReduxThunk,
+    createLogger({
+      collapsed: true,
+      diff: true
+    }))
+);
 
-const mapStateToSymProps = (state) => {
+const mapStateToSymProps = ({tictactoe}) => {
   return {
-    player: state.player,
-    status: state.status,
-    level: state.level
+    player: tictactoe.player,
+    status: tictactoe.status,
+    level: tictactoe.level
   }
 };
 
-const mapDispatchToSymProps = (dispatch) => {
+const mapDispatchToSymProps = dispatch => {
   return {
     onSymbolClick: (symbol) => {
       dispatch({ type: 'CHOOSE_SYMBOL', symbol: symbol })
@@ -54,9 +65,9 @@ const SymbolChooser = connect(
   mapDispatchToSymProps
 )(PlayerSymbol);
 
-const mapStateToLevelProps = (state) => {
+const mapStateToLevelProps = ({tictactoe}) => {
   return {
-    level: state.level
+    level: tictactoe.level
   }
 };
 
@@ -113,10 +124,10 @@ const Board = ({board, status, onCellClick}) => {
   );
 };
 
-const mapStateToProps = (state) => {
+const mapStateToProps = ({tictactoe}) => {
   return {
-    board: state.board,
-    status: state.status
+    board: tictactoe.board,
+    status: tictactoe.status
   }
 };
 
@@ -152,10 +163,7 @@ const Tictactoe = connect(
   mapDispatchToProps
 )(Board);
 
-const mapStateToResetProps = (state) => {
-  return {
-  }
-};
+const mapStateToResetProps = state => ({});
 
 const mapDispatchToResetProps = (dispatch) => {
   return {
@@ -181,7 +189,7 @@ const Reset = connect(
 
 const loginUser = (providerName) => {
   return dispatch => {
-    return login(providerName).then(state => {
+    return loginWith(providerName).then(state => {
       dispatch(recieveState(state))
     }).catch(e => {
       console.error("login failed", e)
@@ -223,6 +231,18 @@ const LoginWithGoogle = loginWithProvider('google');
 const LoginWithGitHub = loginWithProvider('github');
 
 
+
+firebaseAuth.onAuthStateChanged(firebaseUser => {
+  if (firebaseUser) {
+    console.log('firebaseUser:', firebaseUser);
+    store.dispatch(login(firebaseUser));
+  } else {
+    console.log('not signed in', firebaseUser);
+    store.dispatch(logout());
+  }
+});
+
+
 ////////////////////////////
 
 const App = () => (
@@ -256,14 +276,10 @@ ReactDOM.render(
 // initAuth(store.dispatch);
 // render();
 
-
-
 store.subscribe(() => {
-  if (store.getState().status !== 'wait' && store.getState().status !== 'running' && store.getState().status !== 'delay') {
-    setTimeout(() => {
-      store.dispatch({
-        type: 'RESET',
-      });
-    }, 3500);
+  const {tictactoe} = store.getState()
+  const {status} = tictactoe;
+  if (status !== 'wait' && status !== 'running' && status !== 'delay') {
+    setTimeout(() => store.dispatch({type: 'RESET'}), 3500);
   }
 });
